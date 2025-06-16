@@ -1,0 +1,28 @@
+# AI 조류 사진 자동 분류 프로그램 v2.0 requirements (EXE 빌드 지원)
+# 필수 패키지들
+torch>=2.0.0
+torchvision>=0.15.0
+ultralytics>=8.0.0
+google-generativeai>=0.3.0
+wikipedia-api>=0.6.0
+pandas>=2.0.0
+pillow>=10.0.0
+requests>=2.28.0
+beautifulsoup4>=4.11.0
+customtkinter>=5.2.0
+
+# v2.0 시각적 리포트 기능을 위한 추가 패키지
+python-docx>=0.8.11
+
+# EXE 빌드를 위한 패키지
+pyinstaller>=5.13.0
+
+# 선택적 패키지들 (성능 향상)
+# CUDA 지원을 위해서는 PyTorch CUDA 버전 설치 필요
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+# EXE 빌드 명령어 예시:
+# pyinstaller --onefile --windowed --add-data "renamer_data;renamer_data" --hidden-import=docx.oxml.shared --hidden-import=docx.oxml.ns app.py
+
+# 또는 더 안전한 빌드:
+# pyinstaller --onedir --windowed --add-data "renamer_data;renamer_data" --collect-all docx --collect-all ultralytics --collect-all torch app.py
