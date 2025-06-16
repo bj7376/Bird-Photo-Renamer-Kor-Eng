@@ -1,4 +1,4 @@
-# 파일 이름: visual_report.py (v2.0 완전 새버전)
+# 파일 이름: visual_report.py (v2.0 완전 새버전) - 리포트 버그 수정
 """
 조류 관찰 데이터를 기반으로 HTML/Word 형식의 시각적 리포트를 생성합니다.
 """
@@ -116,7 +116,7 @@ def create_html_report(log_dir: str, observations: List[Dict], location: str, cr
         'medium': (250, 250),
         'large': (400, 400)
     }
-    thumb_size = thumb_sizes.get(thumbnail_size, (250, 250))
+    thumb_size_px = thumb_sizes.get(thumbnail_size, (250, 250))
     
     # 관찰 시간 정보
     time_info = get_observation_time_info(observations)
@@ -223,7 +223,7 @@ def create_html_report(log_dir: str, observations: List[Dict], location: str, cr
         }}
         .crop-image {{
             width: 100%;
-            height: {thumb_size[1]}px;
+            height: {thumb_size_px[1]}px;
             object-fit: cover;
             background: #f0f0f0;
         }}
@@ -320,27 +320,24 @@ def create_html_report(log_dir: str, observations: List[Dict], location: str, cr
             if obs_data['datetime']:
                 dates_in_species = [o['datetime'] for o in species_observations if o['datetime']]
                 if dates_in_species and min(dates_in_species).date() != max(dates_in_species).date():
-                    # 여러 날에 걸친 관찰이면 날짜도 표시
                     time_str = obs_data['datetime'].strftime('%m/%d %H:%M:%S')
                 else:
-                    # 같은 날이면 시간만 표시
                     time_str = obs_data['datetime'].strftime('%H:%M:%S')
             else:
                 time_str = '시간 정보 없음'
             
-            # 크롭 이미지 경로 찾기
+            # [수정됨] 각 관찰 기록의 고유한 크롭 이미지를 찾습니다.
             crop_img_path = None
-            crop_filename = f"{sanitize_filename(korean_name)}_{sanitize_filename(common_name)}_crop"
-            for ext in ['.jpg', '.jpeg', '.png']:
-                potential_path = os.path.join(crop_dir, f"{crop_filename}{ext}")
-                if os.path.exists(potential_path):
-                    crop_img_path = potential_path
-                    break
+            base_crop_name = os.path.splitext(obs_data['new_filename'])[0]
+            crop_filename = f"{base_crop_name}_crop.jpg"
+            potential_path = os.path.join(crop_dir, crop_filename)
+            if os.path.exists(potential_path):
+                crop_img_path = potential_path
             
             # 이미지를 base64로 인코딩
             img_data = ""
             if crop_img_path:
-                img_data = image_to_base64(crop_img_path, thumb_size)
+                img_data = image_to_base64(crop_img_path, thumb_size_px)
             
             html_content += f"""
                     <div class="observation-card">
@@ -411,19 +408,12 @@ def create_word_report(log_dir: str, observations: List[Dict], location: str, cr
     # 한글 폰트 설정 함수 (폴백 지원)
     def set_korean_font(run, font_name=None):
         """한글 텍스트에 적절한 폰트 설정 (폰트 폴백 지원)"""
-        # 폰트 우선순위 (Windows → macOS → Linux)
         font_candidates = [
-            "맑은 고딕",     # Windows 기본
-            "Apple SD Gothic Neo",  # macOS
-            "Noto Sans CJK KR",     # Linux
-            "Arial Unicode MS",      # 범용
-            "DejaVu Sans"           # 최후의 수단
+            "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans CJK KR",
+            "Arial Unicode MS", "DejaVu Sans"
         ]
-        
         if font_name:
             font_candidates.insert(0, font_name)
-        
-        # 첫 번째 사용 가능한 폰트 적용
         for font in font_candidates:
             try:
                 run.font.name = font
@@ -438,33 +428,20 @@ def create_word_report(log_dir: str, observations: List[Dict], location: str, cr
     # 문서 제목
     title = doc.add_heading('🐦 조류 관찰 보고서', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    for run in title.runs:
-        set_korean_font(run)
+    for run in title.runs: set_korean_font(run)
     
     # 기본 정보
     info_para = doc.add_paragraph()
-    run1 = info_para.add_run(f"관찰일: {time_info['date']}\n")
-    run1.bold = True
-    set_korean_font(run1)
-    
-    run2 = info_para.add_run(f"관찰시간: {time_info['time_range']}\n")
-    run2.bold = True
-    set_korean_font(run2)
-    
-    run3 = info_para.add_run(f"관찰 장소: {location}")
-    run3.bold = True
-    set_korean_font(run3)
-    
+    run1 = info_para.add_run(f"관찰일: {time_info['date']}\n"); run1.bold = True; set_korean_font(run1)
+    run2 = info_para.add_run(f"관찰시간: {time_info['time_range']}\n"); run2.bold = True; set_korean_font(run2)
+    run3 = info_para.add_run(f"관찰 장소: {location}"); run3.bold = True; set_korean_font(run3)
     info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     # 요약 테이블
     summary_heading = doc.add_heading('📊 관찰 요약', level=1)
-    for run in summary_heading.runs:
-        set_korean_font(run)
+    for run in summary_heading.runs: set_korean_font(run)
     
-    summary_table = doc.add_table(rows=2, cols=4)
-    summary_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    
+    summary_table = doc.add_table(rows=2, cols=4); summary_table.alignment = WD_TABLE_ALIGNMENT.CENTER
     headers = ['관찰 건수', '관찰 종수', '관찰 과수', '관찰 목수']
     values = [
         str(len(observations)),
@@ -474,37 +451,24 @@ def create_word_report(log_dir: str, observations: List[Dict], location: str, cr
     ]
     
     for i, header in enumerate(headers):
-        cell = summary_table.cell(0, i)
-        cell.text = header
-        for paragraph in cell.paragraphs:
-            for run in paragraph.runs:
-                run.bold = True
-                set_korean_font(run)
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        cell = summary_table.cell(1, i)
-        cell.text = values[i]
-        for paragraph in cell.paragraphs:
-            for run in paragraph.runs:
-                set_korean_font(run)
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cell_h = summary_table.cell(0, i); cell_h.text = header
+        for p in cell_h.paragraphs:
+            for r in p.runs: r.bold = True; set_korean_font(r)
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        cell_v = summary_table.cell(1, i); cell_v.text = values[i]
+        for p in cell_v.paragraphs:
+            for r in p.runs: set_korean_font(r)
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
     # 종별 섹션
     species_groups = {}
     for o in observations:
-        key = o['scientific_name']
-        if key not in species_groups:
-            species_groups[key] = []
-        species_groups[key].append(o)
+        key = o['scientific_name']; species_groups.setdefault(key, []).append(o)
     
-    sorted_species = sorted(species_groups.items(), 
-                          key=lambda x: (x[1][0]['taxonomy'].get('order', 'zzz'),
-                                       x[1][0]['taxonomy'].get('family', 'zzz')))
+    sorted_species = sorted(species_groups.items(), key=lambda x: (x[1][0]['taxonomy'].get('order', 'zzz'), x[1][0]['taxonomy'].get('family', 'zzz')))
     
-    # 종별 관찰 기록 헤딩
     record_heading = doc.add_heading('🔍 종별 관찰 기록', level=1)
-    for run in record_heading.runs:
-        set_korean_font(run)
+    for run in record_heading.runs: set_korean_font(run)
     
     for sci_name, species_observations in sorted_species:
         first_obs = species_observations[0]
@@ -513,97 +477,66 @@ def create_word_report(log_dir: str, observations: List[Dict], location: str, cr
         order = first_obs['taxonomy'].get('order', 'N/A')
         family = first_obs['taxonomy'].get('family', 'N/A')
         
-        # 종 제목
         species_title = doc.add_heading(f"{korean_name}", level=2)
-        for run in species_title.runs:
-            set_korean_font(run)
+        for run in species_title.runs: set_korean_font(run)
         
-        # 종 정보
         species_info = doc.add_paragraph()
-        run1 = species_info.add_run(f"{common_name} | ")
-        run1.italic = True
-        set_korean_font(run1)
+        run1 = species_info.add_run(f"{common_name} | "); run1.italic = True; set_korean_font(run1)
+        run2 = species_info.add_run(f"{sci_name}\n"); run2.italic = True
+        run3 = species_info.add_run(f"목: {order} | 과: {family}"); set_korean_font(run3)
         
-        run2 = species_info.add_run(f"{sci_name}\n")
-        run2.italic = True
-        
-        run3 = species_info.add_run(f"목: {order} | 과: {family}")
-        set_korean_font(run3)
-        
-        # 관찰 기록 테이블
-        table = doc.add_table(rows=1, cols=3)
-        table.style = 'Table Grid'
-        
+        table = doc.add_table(rows=1, cols=3); table.style = 'Table Grid'
         header_cells = table.rows[0].cells
         header_texts = ['크롭 이미지', '관찰 시간', '분류 정보']
-        
-        for i, header_text in enumerate(header_texts):
-            cell = header_cells[i]
-            cell.text = header_text
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.bold = True
-                    set_korean_font(run)
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for i, text in enumerate(header_texts):
+            cell = header_cells[i]; cell.text = text
+            for p in cell.paragraphs:
+                for r in p.runs: r.bold = True; set_korean_font(r)
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         for obs_data in species_observations:
             row_cells = table.add_row().cells
             
-            # 크롭 이미지 추가
-            crop_filename = f"{sanitize_filename(korean_name)}_{sanitize_filename(common_name)}_crop"
+            # [수정됨] 각 관찰 기록의 고유한 크롭 이미지를 찾습니다.
             crop_img_path = None
-            for ext in ['.jpg', '.jpeg', '.png']:
-                potential_path = os.path.join(crop_dir, f"{crop_filename}{ext}")
-                if os.path.exists(potential_path):
-                    crop_img_path = potential_path
-                    break
+            base_crop_name = os.path.splitext(obs_data['new_filename'])[0]
+            crop_filename = f"{base_crop_name}_crop.jpg"
+            potential_path = os.path.join(crop_dir, crop_filename)
+            if os.path.exists(potential_path):
+                crop_img_path = potential_path
             
-            if crop_img_path and os.path.exists(crop_img_path):
+            if crop_img_path:
                 try:
-                    paragraph = row_cells[0].paragraphs[0]
-                    run = paragraph.runs[0] if paragraph.runs else paragraph.add_run()
-                    run.add_picture(crop_img_path, width=Inches(1.5))
-                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p = row_cells[0].paragraphs[0]
+                    r = p.runs[0] if p.runs else p.add_run()
+                    r.add_picture(crop_img_path, width=Inches(1.5))
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 except Exception as e:
-                    row_cells[0].text = "이미지 로드 실패"
-                    for paragraph in row_cells[0].paragraphs:
-                        for run in paragraph.runs:
-                            set_korean_font(run)
-                    log(f"  - Word 이미지 삽입 실패: {e}")
+                    row_cells[0].text = "이미지 로드 실패"; log(f"  - Word 이미지 삽입 실패: {e}")
             else:
                 row_cells[0].text = "이미지 없음"
-                for paragraph in row_cells[0].paragraphs:
-                    for run in paragraph.runs:
-                        set_korean_font(run)
             
-            # 시간 정보 (여러 날 지원)
+            # 모든 텍스트 셀에 폰트 적용
+            for p in row_cells[0].paragraphs:
+                for r in p.runs: set_korean_font(r)
+
             if obs_data['datetime']:
                 dates_in_species = [o['datetime'] for o in species_observations if o['datetime']]
                 if dates_in_species and min(dates_in_species).date() != max(dates_in_species).date():
-                    # 여러 날에 걸친 관찰이면 날짜도 표시
                     time_str = obs_data['datetime'].strftime('%m/%d %H:%M:%S')
                 else:
-                    # 같은 날이면 시간만 표시
                     time_str = obs_data['datetime'].strftime('%H:%M:%S')
             else:
                 time_str = '시간 정보 없음'
             
-            row_cells[1].text = time_str
-            for paragraph in row_cells[1].paragraphs:
-                for run in paragraph.runs:
-                    set_korean_font(run)
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            row_cells[1].text = time_str;
+            for p in row_cells[1].paragraphs: p.alignment = WD_ALIGN_PARAGRAPH.CENTER; [set_korean_font(r) for r in p.runs]
             
-            # 분류 정보
             row_cells[2].text = f"목: {order}\n과: {family}"
-            for paragraph in row_cells[2].paragraphs:
-                for run in paragraph.runs:
-                    set_korean_font(run)
-        
-        # 페이지 구분을 위한 공백
+            for p in row_cells[2].paragraphs: [set_korean_font(r) for r in p.runs]
+
         doc.add_paragraph()
     
-    # 문서 저장
     word_path = os.path.join(log_dir, 'visual_report.docx')
     try:
         doc.save(word_path)
@@ -619,7 +552,6 @@ def create_visual_reports(observations: List[Dict], out_dir: str, src_dir: str, 
     log_dir = os.path.join(out_dir, '탐조기록')
     crop_dir = os.path.join(out_dir, 'cropped_images')
     
-    # 리포트 형식에 따른 생성
     report_format = report_options.get('format', 'html')
     thumbnail_size = report_options.get('thumbnail_size', 'medium')
     save_crops = report_options.get('save_crops', True)
@@ -632,7 +564,6 @@ def create_visual_reports(observations: List[Dict], out_dir: str, src_dir: str, 
         log("- Word 시각적 리포트 생성 중...")
         create_word_report(log_dir, observations, location, crop_dir, log)
     
-    # 크롭 이미지 저장 옵션이 꺼져있으면 임시 파일들 정리
     if not save_crops and os.path.exists(crop_dir):
         try:
             shutil.rmtree(crop_dir)

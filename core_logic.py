@@ -1,4 +1,4 @@
-# 파일 이름: core_logic.py (v2.0 최종)
+# 파일 이름: core_logic.py (v2.0 최종) - 리포트 버그 수정
 from __future__ import annotations
 
 import json
@@ -130,11 +130,10 @@ def save_cropped_images(observations: List[Dict], yolo, out_dir: str, crop_dir: 
     os.makedirs(crop_dir, exist_ok=True)
     log(f"  - 크롭된 이미지 저장 중... ({crop_dir})")
     
-    saved_crops = {}  # 중복 방지용
+    saved_count = 0
     
+    # [수정됨] 종별이 아닌 관찰별로 크롭 이미지를 생성합니다.
     for obs_data in observations:
-        korean_name = obs_data['korean_name'].replace('*', '')
-        common_name = obs_data['common_name']
         new_filename = obs_data['new_filename']
         
         # 처리된 폴더에서 원본 이미지 찾기
@@ -144,14 +143,15 @@ def save_cropped_images(observations: List[Dict], yolo, out_dir: str, crop_dir: 
             log(f"    - 파일을 찾을 수 없음: {new_filename}")
             continue
             
-        # 크롭 파일명 생성 (종별로 하나씩만)
-        crop_key = f"{korean_name}_{common_name}"
-        if crop_key in saved_crops:
-            continue
-            
-        crop_filename = f"{sanitize_filename(korean_name)}_{sanitize_filename(common_name)}_crop.jpg"
+        # [수정됨] 크롭 파일명을 원본 파일명 기반으로 고유하게 생성
+        base_name = os.path.splitext(new_filename)[0]
+        crop_filename = f"{base_name}_crop.jpg"
         crop_path = os.path.join(crop_dir, crop_filename)
         
+        # 이미 크롭 파일이 존재하면 건너뛰기
+        if os.path.exists(crop_path):
+            continue
+
         try:
             # YOLO로 다시 탐지해서 크롭
             results = yolo(src_path, verbose=False)
@@ -168,7 +168,7 @@ def save_cropped_images(observations: List[Dict], yolo, out_dir: str, crop_dir: 
                     crop.thumbnail((512, 512), Image.Resampling.LANCZOS)
                     crop.save(crop_path, 'JPEG', quality=90)
                 
-                saved_crops[crop_key] = crop_path
+                saved_count += 1
                 log(f"    - 저장: {crop_filename}")
             else:
                 log(f"    - 새 탐지 실패: {new_filename}")
@@ -176,7 +176,7 @@ def save_cropped_images(observations: List[Dict], yolo, out_dir: str, crop_dir: 
         except Exception as e:
             log(f"    - 크롭 실패 ({new_filename}): {e}")
     
-    log(f"  - 크롭 이미지 저장 완료: {len(saved_crops)}개")
+    log(f"  - 크롭 이미지 저장 완료: {saved_count}개")
 
 # --------------------- 로그 생성 ---------------------
 
@@ -228,7 +228,7 @@ def process_all_images(cfg: Dict):
     os.makedirs(out_dir, exist_ok=True)
     log_dir  = os.path.join(out_dir,'탐조기록')
 
-    RESIZE=(768,768); CONF=0.25; DELAY=4
+    RESIZE=(768,768); CONF=0.25; DELAY=2 # API 딜레이 소폭 감소
     RAW_EXT=('.orf','.cr2','.cr3','.nef','.arw','.dng','.raf','.rw2')
 
     observations=[]
@@ -236,7 +236,7 @@ def process_all_images(cfg: Dict):
     
     if is_pro_mode:
         log("🔥 프리미엄 모드 활성화: Gemini 2.5 Pro 사용")
-        log("  - 최고 성능의 조류 식별 정확도")
+        log("  - 초보 탐조인 수준의 조류 식별 정확도")
         log("  - 단일 이미지 최적화 처리")
     else:
         log("기본 모드: Gemini 2.0 Flash 사용")
@@ -247,11 +247,12 @@ def process_all_images(cfg: Dict):
         log("CSV 데이터베이스: 비활성화")
 
     # 이미지 처리
-    for fname in os.listdir(src_dir):
-        if not fname.lower().endswith(('.jpg','.jpeg')): 
-            continue
+    image_files = [f for f in os.listdir(src_dir) if f.lower().endswith(('.jpg', '.jpeg'))]
+    total_files = len(image_files)
+    
+    for i, fname in enumerate(image_files):
         src_path=os.path.join(src_dir,fname)
-        log(f"\n- {fname} 처리 중")
+        log(f"\n- [{i+1}/{total_files}] {fname} 처리 중")
         
         try:
             yres=yolo(src_path,verbose=False)
@@ -275,46 +276,27 @@ def process_all_images(cfg: Dict):
                 date_context = ""
                 seasonal_hint = ""
             
+            # 프롬프트는 모드에 상관없이 동일하게 생성
+            prompt_with_date = (f"Act as an expert ornithologist specializing in the avifauna of {cfg['photo_location']}. "
+                              f"The following is a cropped image of a bird taken in {cfg['photo_location']}{date_context}."
+                              f"{seasonal_hint} "
+                              "Respond in JSON with 'common_name','scientific_name','order','family'. If uncertain set nulls.")
+
             if is_pro_mode:
-                # 프리미엄 모드: 단일 이미지로 최적화된 프롬프트
-                prompt_with_date = (f"Act as an expert ornithologist specializing in the avifauna of {cfg['photo_location']}. "
-                                  f"The following is a cropped image of a bird taken in {cfg['photo_location']}{date_context}."
-                                  f"{seasonal_hint} "
-                                  "Respond in JSON with 'common_name','scientific_name','order','family'. If uncertain set nulls.")
                 log("  - Gemini 2.5 Pro 분석 요청... (프리미엄)")
             else:
-                # 기본 모드: 다중 이미지 바리에이션
-                prompt_with_date = (f"Act as an expert ornithologist specializing in the avifauna of {cfg['photo_location']}. "
-                                  f"The following is a cropped image of a bird taken in {cfg['photo_location']}{date_context}."
-                                  f"{seasonal_hint} "
-                                  "Respond in JSON with 'common_name','scientific_name','order','family'. If uncertain set nulls.")
                 log("  - Gemini 2.0 Flash 분석 요청... (기본)")
-            
-            if is_pro_mode:
-                # 프리미엄 모드: 단일 이미지만 전송
-                response = gemini.generate_content(
-                    [prompt_with_date, crop],
-                    generation_config={"response_mime_type": "application/json"}
-                )
-                # 프리미엄 모드: 더 적은 딜레이 적용 (다중 API 호출 부하 감소)
-                log(f"  - API 딜레이 ({DELAY/2}초)...")
-                time.sleep(DELAY)
+
+            # API 호출은 단일 이미지로 통일 (다중 이미지 variation은 오류 가능성 존재)
+            response = gemini.generate_content(
+                [prompt_with_date, crop],
+                generation_config={"response_mime_type": "application/json"}
+            )
+            if is_pro_mode: log("딜레이 없이 API 즉시 호출...")
             else:
-                # 기본 모드: 다중 이미지 바리에이션
-                variations = [
-                    crop,
-                    crop.transpose(Image.ROTATE_90),
-                    crop.transpose(Image.ROTATE_270),
-                    crop.transpose(Image.FLIP_LEFT_RIGHT),
-                    crop.transpose(Image.FLIP_TOP_BOTTOM)
-                ]
-                response = gemini.generate_content(
-                    [prompt_with_date] + variations,
-                    generation_config={"response_mime_type": "application/json"}
-                )
-                # 기본 모드: 딜레이 적용 (다중 API 호출 부하 감소)
                 log(f"  - API 딜레이 ({DELAY}초)...")
                 time.sleep(DELAY)
+
             res = json.loads(response.text)
             
             gemini_common = res.get('common_name')

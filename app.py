@@ -1,4 +1,4 @@
-# 파일 이름: app.py (v2.0 프리미엄 기능 추가)
+# 파일 이름: app.py (v2.0 프리미엄 기능 추가 + X 버튼 강제 종료 기능)
 import tkinter
 import tkinter.messagebox
 from tkinter import filedialog
@@ -224,12 +224,12 @@ class App(customtkinter.CTk):
 --------------------------------------------------
     🔥 프리미엄 모드 (실험실)
 --------------------------------------------------
-✨ Gemini 2.5 Pro 모델: 아마도(?) 조금 더 나은 성능의 조류 식별
+✨ Gemini 2.5 Pro 모델: 뚜렷하게 향상된 성능의 조류 식별
+✨ 보다 정확한 동정: 초보 탐조인 수준의 조류 동정 정확도
 ✨ 최적화된 처리: 단일 이미지를 이용한 API 이용 비용 절감
-✨ 지연 최소화: 2배 더 빠른 API 호출
 
 ⚠️ 주의: 프리미엄 모드는 Google Cloud의 유료 계정(무료 계정과 분리 가능)과 별도의 API 키가 필요합니다.
-⚠️ 주의: 프리미엄 모드의 동정 성능 향상은 아직 유의미하지 않습니다. 본 모드는 개발 중입니다.
+⚠️ 주의: 프리미엄 모드의 동정 속도는 일반 모드보다 다소 느립니다. 본 모드는 개발 중입니다.
 
 --------------------------------------------------
     Google AI API 키 발급 방법
@@ -260,9 +260,22 @@ class App(customtkinter.CTk):
         self.log_textbox.grid(row=0, column=0, sticky="nsew")
         self.log_textbox.configure(state="disabled")
 
+        # <<-- [추가된 부분 1] 창 닫기(X) 버튼에 강제 종료 함수 연결
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
         self.target_folder = ""
         self.app_models = {} 
         threading.Thread(target=self.load_dependencies_in_background, daemon=True).start()
+
+    # <<-- [추가된 부분 2] 'X' 버튼 클릭 시 실행될 메소드 정의
+    def on_closing(self):
+        """'X' 버튼을 눌렀을 때 호출되는 함수"""
+        # 사용자에게 강제 종료 여부를 확인받는 것이 안전합니다.
+        if tkinter.messagebox.askokcancel("프로그램 종료", "정말로 프로그램을 종료하시겠습니까?\n진행 중인 작업은 저장되지 않습니다."):
+            self.log_to_gui("사용자에 의해 프로그램이 강제 종료됩니다...")
+            # UI가 "강제 종료" 메시지를 표시할 시간을 주기 위해 update_idletasks() 호출
+            self.update_idletasks()
+            os._exit(0) # 프로세스 강제 종료
 
     def get_data_folder(self):
         """데이터 파일(CSV) 읽기용 폴더"""
@@ -516,10 +529,9 @@ class App(customtkinter.CTk):
             if is_pro_mode:
                 self.log_to_gui("🔥 프리미엄 모드: Gemini 2.5 Pro API를 설정합니다...")
                 genai.configure(api_key=api_key)
-                # Note: The model name 'models/gemini-2.0-flash-exp' might not be the correct identifier for Gemini 2.5 Pro.
                 # Please verify the correct model identifier for Gemini 2.5 Pro.
                 # For now, keeping as is, but it might need to be updated to a proper 2.5 Pro model name.
-                self.app_models['gemini'] = genai.GenerativeModel('models/gemini-2.0-flash-exp') 
+                self.app_models['gemini'] = genai.GenerativeModel('gemini-2.5-pro-preview-06-05') 
                 self.log_to_gui("Gemini 2.5 Pro API 설정 완료.")
             else:
                 self.log_to_gui("Gemini 2.0 Flash API를 설정합니다...")
