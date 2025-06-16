@@ -52,17 +52,18 @@ pip install google-generativeai ultralytics torch torchvision torchaudio opencv-
 python app.py
 ```
 
-### 4. 실행 파일(.exe) 빌드
+### 4. 실행 파일(.exe 등) 빌드
 
 `PyInstaller`를 사용하여 직접 빌드할 수 있습니다.
 ```bash
 # PyInstaller 설치 (한 번만)
 pip install pyinstaller
 
-# 실행 파일 빌드
-pyinstaller --onefile --windowed --name "AI_Bird_Photo_Renamer" app.py
-```
-빌드가 완료되면 `dist` 폴더 안에 `AI_Bird_Photo_Renamer.exe` 파일이 생성됩니다.
+# 실행 파일 빌드 / Windows
+pyinstaller --onefile --windowed --name "AI_Bird_Photo_Renamer" --add-data "renamer_data;renamer_data" app.py
+
+# 실행 파일 빌드 / macOS/Linux  
+pyinstaller --onefile --windowed --name "AI_Bird_Photo_Renamer" --add-data "renamer_data:renamer_data" app.py
 
 ## Acknowledgements & Credits
 
@@ -70,6 +71,6 @@ pyinstaller --onefile --windowed --name "AI_Bird_Photo_Renamer" app.py
 
 * **Google:** 유연한 멀티모달 AI 모델 [Gemini](https://deepmind.google/technologies/gemini/)를 API로 제공하여 핵심적인 식별 기능을 구현할 수 있었습니다.
 * **Wikipedia & `Wikipedia-API`:** 전 세계의 지식이 모인 [Wikipedia](https://www.wikipedia.org/)와, 이를 파이썬에서 쉽게 접근할 수 있게 해주는 `Wikipedia-API` 라이브러리 덕분에 최신 명칭 정보를 교차 검증할 수 있었습니다.
-* **새와 생명의 터 (Birds Korea):** 대한민국 조류 목록의 중요한 기준이 되는 [2014년 국가 조류 목록](http://www.birdskorea.or.kr/Birds/Checklist/BK-CL-Checklist-Apr-2014.shtml)을 공개해주셔서, 정보의 2차 검증에 큰 도움이 되었습니다.
+* **새와 생명의 터 (Birds Korea):** 대한민국 조류 목록의 중요한 기준이 되는 [2014년 및 2022년 국가 조류 목록](http://www.birdskorea.or.kr/Birds/Checklist/BK-CL-Checklist-Apr-2014.shtml)을 공개해주셔서, 정보의 2차 검증에 큰 도움이 되었습니다.
 * **Ultralytics YOLOv8:** 빠르고 정확한 객체 탐지 모델인 [YOLOv8](https://github.com/ultralytics/ultralytics)을 통해 사진 속에서 새를 효율적으로 찾아낼 수 있었습니다.
-* **CustomTkinter:** GUI를 손쉽게 만들 수 있도록 도와준 [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) 라이브러리에 감사합니다.
+* **CustomTkinter:** GUI를 손쉽게 만들 수 있도록 도와준 [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) 라이브러리에 감사를 표합니다.
