@@ -1,4 +1,4 @@
-# 파일 이름: core_logic.py (v2.0 최종) - 리포트 버그 수정
+# 파일 이름: core_logic.py (v2.1 - YOLO 제거, 원본 이미지 직접 사용)
 from __future__ import annotations
 
 import json
@@ -8,6 +8,7 @@ import shutil
 import time
 from datetime import datetime
 from typing import Dict, List
+import io
 
 import pandas as pd
 from PIL import Image
@@ -31,6 +32,46 @@ def get_photo_datetime(img: Image.Image):
         return datetime.strptime(ds, "%Y:%m:%d %H:%M:%S") if ds else None
     except Exception:
         return None
+
+
+def resize_image_for_api(image_path: str, max_size_mb: int = 20) -> bytes:
+    """이미지를 API 전송용으로 리사이즈 (20MB 이하로만 제한)"""
+    with Image.open(image_path) as img:
+        # EXIF orientation 처리
+        if hasattr(img, '_getexif'):
+            exif = img._getexif()
+            if exif and 274 in exif:
+                orientation = exif[274]
+                if orientation == 3:
+                    img = img.rotate(180, expand=True)
+                elif orientation == 6:
+                    img = img.rotate(270, expand=True)
+                elif orientation == 8:
+                    img = img.rotate(90, expand=True)
+        
+        # RGB 변환
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # 품질을 조정하여 20MB 이하로 만들기
+        quality = 95
+        
+        while quality >= 60:
+            buffer = io.BytesIO()
+            img.save(buffer, format='JPEG', quality=quality, optimize=True)
+            
+            # 파일 크기 체크
+            size_mb = len(buffer.getvalue()) / (1024 * 1024)
+            
+            if size_mb <= max_size_mb:
+                return buffer.getvalue()
+            
+            quality -= 10
+        
+        # 최종적으로 quality 60으로도 안되면 그대로 반환
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=60, optimize=True)
+        return buffer.getvalue()
 
 # ------------------ 외부 데이터 조회 ------------------
 
@@ -120,19 +161,18 @@ def resolve_names(res: Dict, wiki_info, csv_df, log):
     
     return korean, common, sci, order, family, src, csv_used
 
-# --------------------- 크롭 이미지 저장 ---------------------
+# --------------------- 썸네일 이미지 생성 ---------------------
 
-def save_cropped_images(observations: List[Dict], yolo, out_dir: str, crop_dir: str, log):
-    """크롭된 조류 이미지들을 별도 저장"""
+def create_thumbnail_images(observations: List[Dict], out_dir: str, thumbnail_dir: str, log):
+    """원본 이미지의 썸네일들을 생성하여 저장"""
     if not observations:
         return
     
-    os.makedirs(crop_dir, exist_ok=True)
-    log(f"  - 크롭된 이미지 저장 중... ({crop_dir})")
+    os.makedirs(thumbnail_dir, exist_ok=True)
+    log(f"  - 썸네일 이미지 생성 중... ({thumbnail_dir})")
     
     saved_count = 0
     
-    # [수정됨] 종별이 아닌 관찰별로 크롭 이미지를 생성합니다.
     for obs_data in observations:
         new_filename = obs_data['new_filename']
         
@@ -143,40 +183,40 @@ def save_cropped_images(observations: List[Dict], yolo, out_dir: str, crop_dir: 
             log(f"    - 파일을 찾을 수 없음: {new_filename}")
             continue
             
-        # [수정됨] 크롭 파일명을 원본 파일명 기반으로 고유하게 생성
+        # 썸네일 파일명 생성
         base_name = os.path.splitext(new_filename)[0]
-        crop_filename = f"{base_name}_crop.jpg"
-        crop_path = os.path.join(crop_dir, crop_filename)
+        thumb_filename = f"{base_name}_thumb.jpg"
+        thumb_path = os.path.join(thumbnail_dir, thumb_filename)
         
-        # 이미 크롭 파일이 존재하면 건너뛰기
-        if os.path.exists(crop_path):
+        # 이미 썸네일 파일이 존재하면 건너뛰기
+        if os.path.exists(thumb_path):
             continue
 
         try:
-            # YOLO로 다시 탐지해서 크롭
-            results = yolo(src_path, verbose=False)
-            birds = [{'box': b.xyxy[0].cpu().numpy(), 'conf': float(b.conf[0])} 
-                    for b in results[0].boxes 
-                    if yolo.names[int(b.cls[0])] == 'bird' and float(b.conf[0]) >= 0.25]
+            with Image.open(src_path) as img:
+                # EXIF orientation 처리
+                if hasattr(img, '_getexif'):
+                    exif = img._getexif()
+                    if exif and 274 in exif:
+                        orientation = exif[274]
+                        if orientation == 3:
+                            img = img.rotate(180, expand=True)
+                        elif orientation == 6:
+                            img = img.rotate(270, expand=True)
+                        elif orientation == 8:
+                            img = img.rotate(90, expand=True)
+                
+                # 썸네일 생성 (가로세로 비율 유지)
+                img.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                img.save(thumb_path, 'JPEG', quality=90)
             
-            if birds:
-                best_bird = max(birds, key=lambda x: x['conf'])
-                
-                with Image.open(src_path) as img:
-                    crop = img.crop(tuple(best_bird['box']))
-                    # 적절한 크기로 리사이즈
-                    crop.thumbnail((512, 512), Image.Resampling.LANCZOS)
-                    crop.save(crop_path, 'JPEG', quality=90)
-                
-                saved_count += 1
-                log(f"    - 저장: {crop_filename}")
-            else:
-                log(f"    - 새 탐지 실패: {new_filename}")
+            saved_count += 1
+            log(f"    - 저장: {thumb_filename}")
                 
         except Exception as e:
-            log(f"    - 크롭 실패 ({new_filename}): {e}")
+            log(f"    - 썸네일 생성 실패 ({new_filename}): {e}")
     
-    log(f"  - 크롭 이미지 저장 완료: {saved_count}개")
+    log(f"  - 썸네일 이미지 생성 완료: {saved_count}개")
 
 # --------------------- 로그 생성 ---------------------
 
@@ -216,7 +256,6 @@ def create_logs(log_dir: str, obs: List[Dict], src_dir: str, log):
 
 def process_all_images(cfg: Dict):
     log      = cfg['log_callback']
-    yolo     = cfg['yolo_model']
     gemini   = cfg['gemini_model']
     wiki     = cfg['wiki_wiki']
     csv_df   = cfg.get('csv_db')
@@ -228,18 +267,20 @@ def process_all_images(cfg: Dict):
     os.makedirs(out_dir, exist_ok=True)
     log_dir  = os.path.join(out_dir,'탐조기록')
 
-    RESIZE=(768,768); CONF=0.25; DELAY=2 # API 딜레이 소폭 감소
-    RAW_EXT=('.orf','.cr2','.cr3','.nef','.arw','.dng','.raf','.rw2')
+    DELAY = 0 if not is_pro_mode else 0  # Pro 모드에서는 딜레이 단축
+    RAW_EXT = ('.orf','.cr2','.cr3','.nef','.arw','.dng','.raf','.rw2')
 
-    observations=[]
+    observations = []
     log(f"대상: {os.path.abspath(src_dir)} → 출력: {os.path.abspath(out_dir)}")
     
     if is_pro_mode:
         log("🔥 프리미엄 모드 활성화: Gemini 2.5 Pro 사용")
-        log("  - 초보 탐조인 수준의 조류 식별 정확도")
-        log("  - 단일 이미지 최적화 처리")
+        log("  - 약간 향상된 조류 식별 정확도 (차이 미미)")
+        log("  - 원본 이미지 직접 분석")
     else:
-        log("기본 모드: Gemini 2.0 Flash 사용")
+        log("기본 모드: Gemini 2.5 Flash 사용")
+        log("  - 충분한 조류 식별 정확도")
+        log("  - 원본 이미지 직접 분석")
     
     if csv_df is not None:
         log(f"CSV 데이터베이스: 활성화 ({len(csv_df)}개 레코드)")
@@ -251,22 +292,20 @@ def process_all_images(cfg: Dict):
     total_files = len(image_files)
     
     for i, fname in enumerate(image_files):
-        src_path=os.path.join(src_dir,fname)
+        src_path = os.path.join(src_dir, fname)
         log(f"\n- [{i+1}/{total_files}] {fname} 처리 중")
         
         try:
-            yres=yolo(src_path,verbose=False)
-            birds=[{'box':b.xyxy[0].cpu().numpy(),'conf':float(b.conf[0])} for b in yres[0].boxes if yolo.names[int(b.cls[0])]=='bird' and float(b.conf[0])>=CONF]
-            if not birds: 
-                log("  - 새 없음")
-                continue
-            
-            best=max(birds,key=lambda x:x['conf'])
-            log(f"  - 새 탐지! ({best['conf']:.2f})")
-            
+            # 원본 이미지 정보 추출
             with Image.open(src_path) as im:
-                dt=get_photo_datetime(im)
-                crop=im.crop(tuple(best['box'])).resize(RESIZE)
+                dt = get_photo_datetime(im)
+            
+            # 이미지를 API 전송용으로 리사이즈
+            log("  - 이미지 리사이즈 중...")
+            resized_image_data = resize_image_for_api(src_path)
+            
+            # PIL Image 객체로 변환
+            resized_image = Image.open(io.BytesIO(resized_image_data))
             
             if dt:
                 month_day = dt.strftime("%B %d")
@@ -276,24 +315,29 @@ def process_all_images(cfg: Dict):
                 date_context = ""
                 seasonal_hint = ""
             
-            # 프롬프트는 모드에 상관없이 동일하게 생성
+            # 프롬프트 생성
+            '''
             prompt_with_date = (f"Act as an expert ornithologist specializing in the avifauna of {cfg['photo_location']}. "
-                              f"The following is a cropped image of a bird taken in {cfg['photo_location']}{date_context}."
-                              f"{seasonal_hint} "
-                              "Respond in JSON with 'common_name','scientific_name','order','family'. If uncertain set nulls.")
+                  f"The following is an image of a bird taken in {cfg['photo_location']}{date_context}."
+                  f"{seasonal_hint} "
+                  "Respond in JSON with 'common_name','scientific_name','order','family'. If uncertain set nulls.")
+            '''
+            prompt_with_date = (f"Bird ID for {cfg['photo_location']}{date_context}. {seasonal_hint} "
+"Key factors: overall shape (jizz), body proportions, size relative to environment. "
+"JSON: {'common_name':'name','scientific_name':'species','order':'order','family':'family'}")
 
             if is_pro_mode:
                 log("  - Gemini 2.5 Pro 분석 요청... (프리미엄)")
             else:
-                log("  - Gemini 2.0 Flash 분석 요청... (기본)")
+                log("  - Gemini 2.5 Flash 분석 요청... (기본)")
 
-            # API 호출은 단일 이미지로 통일 (다중 이미지 variation은 오류 가능성 존재)
+            # API 호출
             response = gemini.generate_content(
-                [prompt_with_date, crop],
+                [prompt_with_date, resized_image],
                 generation_config={"response_mime_type": "application/json"}
             )
-            if is_pro_mode: log("딜레이 없이 API 즉시 호출...")
-            else:
+            
+            if not is_pro_mode:
                 log(f"  - API 딜레이 ({DELAY}초)...")
                 time.sleep(DELAY)
 
@@ -367,16 +411,15 @@ def process_all_images(cfg: Dict):
         except Exception as e:
             log(f"  ! 파일 처리 오류: {e}")
     
-    # ==================== v2.0 시각적 리포트 ====================
+    # ==================== v2.1 시각적 리포트 ====================
     
     if observations and report_options.get('format') != 'none':
         log(f"\n🎨 시각적 리포트 생성 중...")
         
-        # 크롭된 이미지 저장
-        if report_options.get('save_crops', True):
-            crop_dir = os.path.join(out_dir, 'cropped_images')
-            log("- 크롭된 조류 이미지 저장 중...")
-            save_cropped_images(observations, yolo, out_dir, crop_dir, log)
+        # 썸네일 이미지 생성
+        thumbnail_dir = os.path.join(out_dir, 'thumbnail_images')
+        log("- 썸네일 이미지 생성 중...")
+        create_thumbnail_images(observations, out_dir, thumbnail_dir, log)
         
         try:
             import visual_report
@@ -397,7 +440,7 @@ def process_all_images(cfg: Dict):
     if is_pro_mode:
         log(f"  - 사용 모드: 프리미엄 (Gemini 2.5 Pro)")
     else:
-        log(f"  - 사용 모드: 기본 (Gemini 2.0 Flash)")
+        log(f"  - 사용 모드: 기본 (Gemini 2.5 Flash)")
     log(f"  - 총 처리: {len(observations)}개")
     log(f"  - CSV 활용: {csv_count}개") 
     log(f"  - 고유 종: {unique_species}종")
@@ -408,9 +451,8 @@ def process_all_images(cfg: Dict):
         log(f"  - 탐조 기록: {log_dir}")
         
         if report_options.get('format') != 'none':
-            crop_dir = os.path.join(out_dir, 'cropped_images')
-            if report_options.get('save_crops', True):
-                log(f"  - 크롭 이미지: {crop_dir}")
+            thumbnail_dir = os.path.join(out_dir, 'thumbnail_images')
+            log(f"  - 썸네일 이미지: {thumbnail_dir}")
             
             report_format = report_options.get('format', 'html')
             if report_format in ['html', 'both']:

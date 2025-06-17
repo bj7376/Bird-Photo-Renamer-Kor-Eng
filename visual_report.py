@@ -1,4 +1,4 @@
-# 파일 이름: visual_report.py (v2.0 완전 새버전) - 리포트 버그 수정
+# 파일 이름: visual_report.py (v2.1 - 썸네일 이미지 사용)
 """
 조류 관찰 데이터를 기반으로 HTML/Word 형식의 시각적 리포트를 생성합니다.
 """
@@ -102,7 +102,7 @@ def get_observation_time_info(observations: List[Dict]) -> Dict[str, str]:
 
 # --------------------- HTML 리포트 생성 ---------------------
 
-def create_html_report(log_dir: str, observations: List[Dict], location: str, crop_dir: str, thumbnail_size: str, log):
+def create_html_report(log_dir: str, observations: List[Dict], location: str, thumbnail_dir: str, thumbnail_size: str, log):
     """HTML 형식의 시각적 리포트 생성"""
     if not observations:
         log("- HTML 리포트를 생성할 기록이 없습니다.")
@@ -221,7 +221,7 @@ def create_html_report(log_dir: str, observations: List[Dict], location: str, cr
             overflow: hidden;
             background: #fafafa;
         }}
-        .crop-image {{
+        .thumb-image {{
             width: 100%;
             height: {thumb_size_px[1]}px;
             object-fit: cover;
@@ -326,22 +326,22 @@ def create_html_report(log_dir: str, observations: List[Dict], location: str, cr
             else:
                 time_str = '시간 정보 없음'
             
-            # [수정됨] 각 관찰 기록의 고유한 크롭 이미지를 찾습니다.
-            crop_img_path = None
-            base_crop_name = os.path.splitext(obs_data['new_filename'])[0]
-            crop_filename = f"{base_crop_name}_crop.jpg"
-            potential_path = os.path.join(crop_dir, crop_filename)
+            # 각 관찰 기록의 고유한 썸네일 이미지를 찾습니다.
+            thumb_img_path = None
+            base_thumb_name = os.path.splitext(obs_data['new_filename'])[0]
+            thumb_filename = f"{base_thumb_name}_thumb.jpg"
+            potential_path = os.path.join(thumbnail_dir, thumb_filename)
             if os.path.exists(potential_path):
-                crop_img_path = potential_path
+                thumb_img_path = potential_path
             
             # 이미지를 base64로 인코딩
             img_data = ""
-            if crop_img_path:
-                img_data = image_to_base64(crop_img_path, thumb_size_px)
+            if thumb_img_path:
+                img_data = image_to_base64(thumb_img_path, thumb_size_px)
             
             html_content += f"""
                     <div class="observation-card">
-                        {f'<img src="{img_data}" alt="{korean_name}" class="crop-image">' if img_data else '<div class="crop-image" style="display:flex;align-items:center;justify-content:center;color:#999;">이미지 없음</div>'}
+                        {f'<img src="{img_data}" alt="{korean_name}" class="thumb-image">' if img_data else '<div class="thumb-image" style="display:flex;align-items:center;justify-content:center;color:#999;">이미지 없음</div>'}
                         <div class="observation-info">
                             <div class="datetime">🕐 {time_str}</div>
                             <div class="taxonomy">
@@ -364,8 +364,8 @@ def create_html_report(log_dir: str, observations: List[Dict], location: str, cr
     
     html_content += """
         <div class="footer">
-            <p>본 보고서는 AI 조류 사진 자동 분류 프로그램 v2.0으로 생성되었습니다.</p>
-            <p>Powered by YOLOv8 + Google Gemini + Wikipedia</p>
+            <p>본 보고서는 AI 조류 사진 자동 분류 프로그램 v2.1로 생성되었습니다.</p>
+            <p>Powered by Google Gemini + Wikipedia</p>
         </div>
     </div>
 </body>
@@ -384,7 +384,7 @@ def create_html_report(log_dir: str, observations: List[Dict], location: str, cr
 
 # --------------------- Word 리포트 생성 ---------------------
 
-def create_word_report(log_dir: str, observations: List[Dict], location: str, crop_dir: str, log):
+def create_word_report(log_dir: str, observations: List[Dict], location: str, thumbnail_dir: str, log):
     """Word 형식의 시각적 리포트 생성"""
     try:
         from docx import Document
@@ -487,7 +487,7 @@ def create_word_report(log_dir: str, observations: List[Dict], location: str, cr
         
         table = doc.add_table(rows=1, cols=3); table.style = 'Table Grid'
         header_cells = table.rows[0].cells
-        header_texts = ['크롭 이미지', '관찰 시간', '분류 정보']
+        header_texts = ['썸네일 이미지', '관찰 시간', '분류 정보']
         for i, text in enumerate(header_texts):
             cell = header_cells[i]; cell.text = text
             for p in cell.paragraphs:
@@ -497,19 +497,19 @@ def create_word_report(log_dir: str, observations: List[Dict], location: str, cr
         for obs_data in species_observations:
             row_cells = table.add_row().cells
             
-            # [수정됨] 각 관찰 기록의 고유한 크롭 이미지를 찾습니다.
-            crop_img_path = None
-            base_crop_name = os.path.splitext(obs_data['new_filename'])[0]
-            crop_filename = f"{base_crop_name}_crop.jpg"
-            potential_path = os.path.join(crop_dir, crop_filename)
+            # 각 관찰 기록의 고유한 썸네일 이미지를 찾습니다.
+            thumb_img_path = None
+            base_thumb_name = os.path.splitext(obs_data['new_filename'])[0]
+            thumb_filename = f"{base_thumb_name}_thumb.jpg"
+            potential_path = os.path.join(thumbnail_dir, thumb_filename)
             if os.path.exists(potential_path):
-                crop_img_path = potential_path
+                thumb_img_path = potential_path
             
-            if crop_img_path:
+            if thumb_img_path:
                 try:
                     p = row_cells[0].paragraphs[0]
                     r = p.runs[0] if p.runs else p.add_run()
-                    r.add_picture(crop_img_path, width=Inches(1.5))
+                    r.add_picture(thumb_img_path, width=Inches(1.5))
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 except Exception as e:
                     row_cells[0].text = "이미지 로드 실패"; log(f"  - Word 이미지 삽입 실패: {e}")
@@ -550,23 +550,15 @@ def create_word_report(log_dir: str, observations: List[Dict], location: str, cr
 def create_visual_reports(observations: List[Dict], out_dir: str, src_dir: str, report_options: Dict, location: str, log):
     """시각적 리포트 생성 메인 함수"""
     log_dir = os.path.join(out_dir, '탐조기록')
-    crop_dir = os.path.join(out_dir, 'cropped_images')
+    thumbnail_dir = os.path.join(out_dir, 'thumbnail_images')
     
     report_format = report_options.get('format', 'html')
     thumbnail_size = report_options.get('thumbnail_size', 'medium')
-    save_crops = report_options.get('save_crops', True)
     
     if report_format in ['html', 'both']:
         log("- HTML 시각적 리포트 생성 중...")
-        create_html_report(log_dir, observations, location, crop_dir, thumbnail_size, log)
+        create_html_report(log_dir, observations, location, thumbnail_dir, thumbnail_size, log)
     
     if report_format in ['docx', 'both']:
         log("- Word 시각적 리포트 생성 중...")
-        create_word_report(log_dir, observations, location, crop_dir, log)
-    
-    if not save_crops and os.path.exists(crop_dir):
-        try:
-            shutil.rmtree(crop_dir)
-            log(f"  - 임시 크롭 이미지 폴더 삭제 완료")
-        except Exception as e:
-            log(f"  - 임시 파일 삭제 실패: {e}")
+        create_word_report(log_dir, observations, location, thumbnail_dir, log)

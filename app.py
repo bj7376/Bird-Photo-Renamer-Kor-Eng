@@ -1,4 +1,4 @@
-# 파일 이름: app.py (v2.0 프리미엄 기능 추가 + X 버튼 강제 종료 기능)
+# 파일 이름: app.py (v2.1 YOLO 제거, 원본 이미지 직접 사용)
 import tkinter
 import tkinter.messagebox
 from tkinter import filedialog
@@ -10,9 +10,7 @@ import json
 
 import core_logic
 
-# 무거운 라이브러리들
-import torch
-from ultralytics import YOLO
+# 가벼운 라이브러리들만
 import wikipediaapi
 import google.generativeai as genai
 import pandas as pd
@@ -25,15 +23,15 @@ class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("AI 조류 사진 자동 분류 프로그램 v2.0")
-        self.geometry("900x820")
+        self.title("AI 조류 사진 자동 분류 프로그램 v2.1")
+        self.geometry("900x750")
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         # 사이드바 프레임 (스크롤 가능한 프레임을 포함할 컨테이너)
         self.sidebar_container_frame = customtkinter.CTkFrame(self, width=280, corner_radius=0)
         self.sidebar_container_frame.grid(row=0, column=0, rowspan=4, sticky="nsew")
-        self.sidebar_container_frame.grid_rowconfigure(0, weight=1) # Make sure the scrollable frame expands
+        self.sidebar_container_frame.grid_rowconfigure(0, weight=1)
         self.sidebar_container_frame.grid_columnconfigure(0, weight=1)
 
         # 스크롤 가능한 사이드바 프레임
@@ -44,7 +42,7 @@ class App(customtkinter.CTk):
         self.sidebar_frame.grid_columnconfigure(0, weight=1)
         self.sidebar_frame.grid_columnconfigure(1, weight=1)
 
-        # 현재 그리드 행 추적 (동적 레이아웃 관리를 위해)
+        # 현재 그리드 행 추적
         self.current_grid_row = 0
 
         # 제목
@@ -66,7 +64,7 @@ class App(customtkinter.CTk):
         self.current_grid_row += 1
         self.location_entry = customtkinter.CTkEntry(self.sidebar_frame, placeholder_text="e.g., South Korea")
         self.location_entry.grid(row=self.current_grid_row, column=0, columnspan=2, padx=20, pady=(0,10), sticky="ew")
-        self.location_entry.insert(0, "South Korea") # 기본값 미리 채우기
+        self.location_entry.insert(0, "South Korea")
         self.current_grid_row += 1
 
         # 리포트 옵션
@@ -83,7 +81,7 @@ class App(customtkinter.CTk):
         self.thumb_size_var = tkinter.StringVar(value="medium")
         self.thumb_size_label = customtkinter.CTkLabel(self.sidebar_frame, text="썸네일:", font=('', 11))
         self.thumb_size_label.grid(row=self.current_grid_row, column=1, padx=(5, 20), pady=(0, 5), sticky="w")
-        self.current_grid_row += 1 # Both labels are on the same row, so increment after both are placed
+        self.current_grid_row += 1
 
         self.none_radio = customtkinter.CTkRadioButton(self.sidebar_frame, text="없음", variable=self.report_format_var, value="none")
         self.none_radio.grid(row=self.current_grid_row, column=0, padx=(20, 5), pady=2, sticky="w")
@@ -106,46 +104,33 @@ class App(customtkinter.CTk):
         self.both_radio = customtkinter.CTkRadioButton(self.sidebar_frame, text="둘 다", variable=self.report_format_var, value="both")
         self.both_radio.grid(row=self.current_grid_row, column=0, padx=(20, 5), pady=2, sticky="w")
         self.current_grid_row += 1
-        
-        # 크롭 이미지 저장 옵션
-        self.crop_save_var = tkinter.BooleanVar(value=True)
-        self.crop_checkbox = customtkinter.CTkCheckBox(self.sidebar_frame, text="크롭 이미지 저장", variable=self.crop_save_var, command=self.on_crop_option_change)
-        self.crop_checkbox.grid(row=self.current_grid_row, column=0, columnspan=2, padx=20, pady=(5, 10), sticky="w")
-        self.current_grid_row += 1
-        
-        # 리포트 옵션 변경 시 크롭 이미지 옵션 체크
-        for radio in [self.none_radio, self.html_radio, self.docx_radio, self.both_radio]:
-            radio.configure(command=self.on_report_option_change)
 
         # API 키 설정
         self.api_key_label = customtkinter.CTkLabel(self.sidebar_frame, text="Google AI API Key (기본):", anchor="w")
         self.api_key_label.grid(row=self.current_grid_row, column=0, columnspan=2, padx=20, pady=(20, 0), sticky="w")
         self.current_grid_row += 1
-        self.api_key_entry = customtkinter.CTkEntry(self.sidebar_frame, placeholder_text="Gemini 2.0 Flash API 키", show="*")
+        self.api_key_entry = customtkinter.CTkEntry(self.sidebar_frame, placeholder_text="Gemini 2.5 Flash API 키", show="*")
         self.api_key_entry.grid(row=self.current_grid_row, column=0, columnspan=2, padx=20, pady=(0, 5), sticky="ew")
         self.current_grid_row += 1
 
         self.key_button_frame = customtkinter.CTkFrame(self.sidebar_frame, fg_color="transparent")
         self.key_button_frame.grid(row=self.current_grid_row, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="ew")
-        self.current_grid_row += 1 # Increment for the frame, not its internal pack()ed widgets
+        self.current_grid_row += 1
         self.save_key_button = customtkinter.CTkButton(self.key_button_frame, text="키 저장", width=60, command=self.save_api_key)
         self.save_key_button.pack(side="left", padx=(0, 5))
         self.load_key_button = customtkinter.CTkButton(self.key_button_frame, text="불러오기", width=60, command=self.load_api_key)
         self.load_key_button.pack(side="left")
 
-        # 프리미엄 모드 섹션 (색이 다른 배경) - 초기에는 숨겨져 있음
-        # 컨테이너 프레임: 항상 표시되며 클릭 가능하도록 배경색 설정
-        self.premium_container_frame = customtkinter.CTkFrame(self.sidebar_frame, fg_color=("#FFE5CC", "#4A3A2A")) # Adjusted color for visibility when collapsed
+        # 프리미엄 모드 섹션
+        self.premium_container_frame = customtkinter.CTkFrame(self.sidebar_frame, fg_color=("#FFE5CC", "#4A3A2A"))
         self.premium_container_frame.grid(row=self.current_grid_row, column=0, columnspan=2, padx=15, pady=(10, 15), sticky="ew")
         self.premium_container_frame.grid_columnconfigure(0, weight=1) 
-        # current_grid_row는 이 프레임 자체가 차지하는 한 줄을 위해 이미 증가되었음
 
         self.premium_label = customtkinter.CTkLabel(self.premium_container_frame, text="🔥 프리미엄 모드 (실험실)", 
                                                     font=customtkinter.CTkFont(size=14, weight="bold"), 
                                                     text_color=("#CC6600", "#FFB366"))
-        # premium_label is on row 0 within premium_container_frame
         self.premium_label.grid(row=0, column=0, columnspan=2, padx=0, pady=(10, 5), sticky="w")
-        self.premium_label.bind("<Button-1>", self.toggle_premium_section) # 클릭 이벤트 바인딩
+        self.premium_label.bind("<Button-1>", self.toggle_premium_section)
 
         # 실제 내용을 담을 프레임 (초기에는 숨김)
         self.premium_content_frame = customtkinter.CTkFrame(self.premium_container_frame, fg_color=("#FFE5CC", "#4A3A2A"))
@@ -171,23 +156,14 @@ class App(customtkinter.CTk):
         self.load_pro_key_button = customtkinter.CTkButton(self.pro_key_button_frame, text="불러오기", width=60, command=self.load_pro_api_key)
         self.load_pro_key_button.pack(side="left")
 
-        # 프리미엄 섹션 상태 변수 (초기 상태를 "접힌" 상태로 설정하기 위해 True로 시작)
-        # toggle_premium_section이 처음 호출될 때 "접힌" 상태로 만들 것이기 때문
+        # 프리미엄 섹션 상태 변수
         self.premium_section_visible = True 
         
-        # 모델 크기 선택 및 하단 버튼들을 인스턴스 변수로 먼저 생성 (grid 배치 없이)
-        self.model_label = customtkinter.CTkLabel(self.sidebar_frame, text="객체 추출 모델:")
-        self.model_var = tkinter.StringVar(value="m") # Corrected: moved definition before use
-        self.rb1 = customtkinter.CTkRadioButton(self.sidebar_frame, text="Small", variable=self.model_var, value="s")
-        self.rb2 = customtkinter.CTkRadioButton(self.sidebar_frame, text="Medium", variable=self.model_var, value="m")
-        self.rb3 = customtkinter.CTkRadioButton(self.sidebar_frame, text="Large", variable=self.model_var, value="l")
-        self.rb4 = customtkinter.CTkRadioButton(self.sidebar_frame, text="XLarge", variable=self.model_var, value="x")
-
+        # 하단 버튼들을 인스턴스 변수로 생성
         self.start_button = customtkinter.CTkButton(self.sidebar_frame, text="모델 로딩 중...", command=self.start_button_event, state="disabled")
         self.status_label = customtkinter.CTkLabel(self.sidebar_frame, text="준비 중...", font=('', 11))
 
         # 초기 상태 설정: 프리미엄 섹션을 숨기고 다음 위젯들을 재배치
-        # toggle_premium_section이 호출되면 visible 상태가 뒤집히므로, True로 시작해야 False(접힘)가 됨.
         self.toggle_premium_section(None) 
 
         # 메인 탭뷰
@@ -204,18 +180,26 @@ class App(customtkinter.CTk):
         program_info = """
 이 프로그램은 다음과 같은 순서로 작동합니다:
 
-1. 로컬 AI 모델(YOLOv8)이 사진에서 '새'의 영역을 찾아냅니다.
-2. 잘라낸 새 이미지를 Google Gemini AI에 전송하여 1차 식별을 요청합니다.
-3. Gemini가 제안한 '영문명'을 기준으로 Wikipedia에서 정확한 국명/영문명을 교차 검증합니다.
-4. Wikipedia 검색 실패 시, CSV 조류 데이터베이스를 차선책으로 조회합니다.
-5. 최종 확정된 정보로 파일명을 만들고, 원본 사진과 RAW 파일의 '사본'을 저장합니다.
-6. 탐조일지와 종 목록 체크리스트가 생성됩니다.
+1. 사진 폴더에서 JPEG 이미지 파일들을 찾습니다.
+2. 각 이미지를 20MB 이하로 리사이즈하여 Google Gemini AI에 전송합니다.
+3. Gemini가 조류를 식별하고 영문명과 학명을 제안합니다.
+4. 제안된 '영문명'을 기준으로 Wikipedia에서 정확한 국명/영문명을 교차 검증합니다.
+5. Wikipedia 검색 실패 시, CSV 조류 데이터베이스를 차선책으로 조회합니다.
+6. 최종 확정된 정보로 파일명을 만들고, 원본 사진과 RAW 파일의 '사본'을 저장합니다.
+7. 탐조일지와 종 목록 체크리스트가 생성됩니다.
 
 --------------------------------------------------
-      v2.0 새로운 기능들
+      v2.1 업데이트 내용
 --------------------------------------------------
-✨ 시각적 리포트: 크롭된 조류 이미지와 함께 HTML 또는 Word 형식의 편집 가능한 리포트 생성
-✨ 크롭 이미지 저장: 식별된 조류의 크롭된 이미지를 별도 폴더에 정리
+✨ 성능 개선: YOLO 새 탐지 기능 제거로 훨씬 가벼워짐
+✨ 모델 업그레이드: Gemini 2.5 Flash (기본 모드)로 성능 향상
+✨ 간편한 처리: 원본 이미지를 직접 분석하여 더 빠른 처리
+✨ 안정성 향상: 복잡한 이미지 처리 과정 제거로 오류 감소
+
+--------------------------------------------------
+      v2.0 기능들 (유지)
+--------------------------------------------------
+✨ 시각적 리포트: 조류 이미지와 함께 HTML 또는 Word 형식의 편집 가능한 리포트 생성
 ✨ 다양한 출력 형식: 없음/HTML(웹 브라우저용)/Word(편집용)/둘 다 선택 가능
 ✨ 썸네일 크기 조절: 리포트의 이미지 크기를 용도에 맞게 선택
 ✨ 향상된 레이아웃: 분류학적 정보와 이미지를 직관적으로 배치
@@ -224,12 +208,14 @@ class App(customtkinter.CTk):
 --------------------------------------------------
     🔥 프리미엄 모드 (실험실)
 --------------------------------------------------
-✨ Gemini 2.5 Pro 모델: 뚜렷하게 향상된 성능의 조류 식별
-✨ 보다 정확한 동정: 초보 탐조인 수준의 조류 동정 정확도
+⚠️ 주의: 2.5 Flash와 2.5 Pro의 조류 식별 성능 차이는 미미합니다.
+⚠️ 가격 차이가 크므로 일반적인 용도로는 기본 모드를 권장합니다.
+
+✨ Gemini 2.5 Pro 모델: 약간 향상된 성능의 조류 식별
 ✨ 최적화된 처리: 단일 이미지를 이용한 API 이용 비용 절감
 
 ⚠️ 주의: 프리미엄 모드는 Google Cloud의 유료 계정(무료 계정과 분리 가능)과 별도의 API 키가 필요합니다.
-⚠️ 주의: 프리미엄 모드의 동정 속도는 일반 모드보다 다소 느립니다. 본 모드는 개발 중입니다.
+⚠️ 주의: 프리미엄 모드의 동정 성능 차이는 미미하지만 비용이 발생합니다.
 
 --------------------------------------------------
     Google AI API 키 발급 방법
@@ -240,7 +226,7 @@ class App(customtkinter.CTk):
 3. 'Create API key in new project' 클릭
 4. 생성된 API 키를 기본 API 키 란에 입력
 
-【프리미엄 모드 - 유료】
+【프리미엄 모드 - 비용 발생】
 1. https://console.cloud.google.com/ 이동
 2. 새 프로젝트 생성 또는 기존 프로젝트 선택
 3. "API 및 서비스" → "사용 설정된 API" → "Vertex AI API" 활성화
@@ -249,7 +235,8 @@ class App(customtkinter.CTk):
 6. 생성된 API 키를 프리미엄 API 키 란에 입력
 
 ※ 프리미엄 모드는 이미지 한 장당 약 $0.00125-$0.005의 비용이 발생합니다.
-※ 개인적인 용도로 기본 모드 사용 시 넉넉한 무료 사용량이 제공됩니다.
+※ 기본 모드는 무료 사용량이 넉넉하며, 조류 식별 성능도 충분합니다.
+※ 성능 차이가 미미하므로 특별한 이유가 없다면 기본 모드를 권장합니다.
 """
         self.description_textbox = customtkinter.CTkTextbox(self.main_tabview.tab("프로그램 설명"), corner_radius=0, wrap="word")
         self.description_textbox.grid(row=0, column=0, sticky="nsew")
@@ -260,22 +247,19 @@ class App(customtkinter.CTk):
         self.log_textbox.grid(row=0, column=0, sticky="nsew")
         self.log_textbox.configure(state="disabled")
 
-        # <<-- [추가된 부분 1] 창 닫기(X) 버튼에 강제 종료 함수 연결
+        # 창 닫기(X) 버튼에 강제 종료 함수 연결
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         self.target_folder = ""
         self.app_models = {} 
         threading.Thread(target=self.load_dependencies_in_background, daemon=True).start()
 
-    # <<-- [추가된 부분 2] 'X' 버튼 클릭 시 실행될 메소드 정의
     def on_closing(self):
         """'X' 버튼을 눌렀을 때 호출되는 함수"""
-        # 사용자에게 강제 종료 여부를 확인받는 것이 안전합니다.
         if tkinter.messagebox.askokcancel("프로그램 종료", "정말로 프로그램을 종료하시겠습니까?\n진행 중인 작업은 저장되지 않습니다."):
             self.log_to_gui("사용자에 의해 프로그램이 강제 종료됩니다...")
-            # UI가 "강제 종료" 메시지를 표시할 시간을 주기 위해 update_idletasks() 호출
             self.update_idletasks()
-            os._exit(0) # 프로세스 강제 종료
+            os._exit(0)
 
     def get_data_folder(self):
         """데이터 파일(CSV) 읽기용 폴더"""
@@ -374,44 +358,26 @@ class App(customtkinter.CTk):
     def toggle_premium_section(self, event):
         """프리미엄 모드 섹션을 확장하거나 축소합니다."""
         
-        # premium_container_frame이 sidebar_frame에서 차지하는 시작 행을 가져옵니다.
         premium_container_row = self.premium_container_frame.grid_info()['row']
 
         if self.premium_section_visible:
             # 현재 펼쳐져 있다면 숨김
             self.premium_content_frame.grid_forget() 
             self.premium_section_visible = False
-            # 다음 위젯들은 premium_container_frame 바로 다음 행부터 시작 (프레임 헤더 아래)
             next_start_row = premium_container_row + 1 
         else:
             # 현재 숨겨져 있다면 펼침
-            self.premium_content_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=0, pady=0) # row 1 within premium_container_frame
+            self.premium_content_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=0, pady=0)
             self.premium_section_visible = True
-            # 다음 위젯들은 premium_container_frame 헤더 + premium_content_frame 높이 다음부터 시작
-            # premium_content_frame은 컨테이너 내에서 6개 행 (row 1부터 5까지)을 차지하므로, 총 6행.
-            # premium_container_frame 자체의 row 0에 premium_label이 있고, 그 아래에 content_frame이 row 1에 시작.
-            # 따라서 premium_container_row + (premium_label이 차지하는 행 수, 즉 1) + (premium_content_frame이 차지하는 행 수, 즉 6)
             next_start_row = premium_container_row + 1 + 6 
             
-        # 프리미엄 섹션 다음으로 오는 위젯들을 현재 계산된 next_start_row부터 재배치
-        
-        self.model_label.grid(row=next_start_row, column=0, columnspan=2, padx=20, pady=(10, 0), sticky="w")
-        next_start_row += 1
-
-        self.rb1.grid(row=next_start_row, column=0, padx=(20, 5), pady=2, sticky="w")
-        self.rb3.grid(row=next_start_row, column=1, padx=(5, 20), pady=2, sticky="w")
-        next_start_row += 1
-
-        self.rb2.grid(row=next_start_row, column=0, padx=(20, 5), pady=2, sticky="w")
-        self.rb4.grid(row=next_start_row, column=1, padx=(5, 20), pady=2, sticky="w")
-        next_start_row += 1
-
+        # 프리미엄 섹션 다음으로 오는 위젯들 재배치
         self.start_button.grid(row=next_start_row, column=0, columnspan=2, padx=20, pady=(10, 10), sticky="ew")
         next_start_row += 1
         
         self.status_label.grid(row=next_start_row, column=0, columnspan=2, padx=20, pady=(0, 10))
         
-        self.sidebar_frame.update_idletasks() # UI 업데이트 강제
+        self.sidebar_frame.update_idletasks()
 
     def on_pro_mode_change(self):
         """프로 모드 변경 시 처리"""
@@ -420,49 +386,11 @@ class App(customtkinter.CTk):
         else:
             self.log_to_status("기본 모드로 변경", "green")
 
-    def on_report_option_change(self):
-        """리포트 옵션 변경 시 크롭 이미지 옵션 확인"""
-        report_format = self.report_format_var.get()
-        if report_format != 'none':
-            self.crop_save_var.set(True)
-            self.crop_checkbox.configure(state="disabled", text="크롭 이미지 저장 (필수)")
-        else:
-            self.crop_checkbox.configure(state="normal", text="크롭 이미지 저장")
-    
-    def on_crop_option_change(self):
-        """크롭 이미지 옵션 변경 시 체크"""
-        report_format = self.report_format_var.get()
-        if report_format != 'none' and not self.crop_save_var.get():
-            self.crop_save_var.set(True)
-            tkinter.messagebox.showinfo("알림", "시각적 리포트 생성을 위해서는 크롭 이미지 저장이 필요합니다.")
-
     def load_dependencies_in_background(self):
         try:
-            # GPU 체크
-            try:
-                if torch.cuda.is_available():
-                    device = "cuda"
-                elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-                    device = "mps"
-                else:
-                    device = "cpu"
-            except Exception:
-                device = "cpu"
-
-            # YOLO 모델 로드
-            # self.model_var는 __init__에서 먼저 선언되었으므로 안전하게 접근 가능
-            model_file = f"yolov8{self.model_var.get()}.pt" 
-            self.log_to_status(f"YOLOv8 모델 로드 중... ({model_file})")
-            
-            # Ensure app_models is initialized
-            if not hasattr(self, 'app_models') or self.app_models is None:
-                self.app_models = {}
-
-            self.app_models['yolo'] = YOLO(model_file).to(device)
-
             # Wikipedia API
             self.log_to_status("Wikipedia API 연결 중...")
-            self.app_models['wiki'] = wikipediaapi.Wikipedia('BirdPhotoOrganizer/2.0', 'en')
+            self.app_models['wiki'] = wikipediaapi.Wikipedia('BirdPhotoOrganizer/2.1', 'en')
 
             # CSV 데이터베이스
             self.log_to_status("CSV 조류 데이터베이스 로딩 중...")
@@ -515,10 +443,9 @@ class App(customtkinter.CTk):
         self.log_textbox.configure(state="normal")
         self.log_textbox.delete("1.0", "end")
 
-        # v2.0 옵션들 수집
+        # v2.1 옵션들 수집
         report_options = {
             'format': self.report_format_var.get(),
-            'save_crops': self.crop_save_var.get(),
             'thumbnail_size': self.thumb_size_var.get()
         }
 
@@ -529,15 +456,13 @@ class App(customtkinter.CTk):
             if is_pro_mode:
                 self.log_to_gui("🔥 프리미엄 모드: Gemini 2.5 Pro API를 설정합니다...")
                 genai.configure(api_key=api_key)
-                # Please verify the correct model identifier for Gemini 2.5 Pro.
-                # For now, keeping as is, but it might need to be updated to a proper 2.5 Pro model name.
                 self.app_models['gemini'] = genai.GenerativeModel('gemini-2.5-pro-preview-06-05') 
                 self.log_to_gui("Gemini 2.5 Pro API 설정 완료.")
             else:
-                self.log_to_gui("Gemini 2.0 Flash API를 설정합니다...")
+                self.log_to_gui("Gemini 2.5 Flash API를 설정합니다...")
                 genai.configure(api_key=api_key)
-                self.app_models['gemini'] = genai.GenerativeModel('models/gemini-2.0-flash')
-                self.log_to_gui("Gemini 2.0 Flash API 설정 완료.")
+                self.app_models['gemini'] = genai.GenerativeModel('models/gemini-2.5-flash-preview-05-20')
+                self.log_to_gui("Gemini 2.5 Flash API 설정 완료.")
         except Exception as e:
             self.log_to_gui(f"Gemini API 키 설정 오류: {e}")
             self.start_button.configure(state="normal", text="분류 시작")
@@ -547,7 +472,6 @@ class App(customtkinter.CTk):
             "photo_location": location, 
             "target_folder": target_folder,
             "log_callback": self.log_to_gui,
-            "yolo_model": self.app_models.get('yolo'), 
             "gemini_model": self.app_models.get('gemini'), 
             "wiki_wiki": self.app_models.get('wiki'),
             "csv_db": self.app_models.get('csv_db'),
@@ -562,13 +486,11 @@ class App(customtkinter.CTk):
             self.start_button.configure(state="normal", text="분류 시작")
 
     def log_to_status(self, message, color=None):
-        # Check if status_label exists before configuring
         if hasattr(self, 'status_label') and self.status_label.winfo_exists():
             self.status_label.configure(text=message, text_color=color if color else ("gray10", "gray90"))
             self.update_idletasks()
 
     def log_to_gui(self, message):
-        # Check if log_textbox exists before configuring
         if hasattr(self, 'log_textbox') and self.log_textbox.winfo_exists():
             self.log_textbox.configure(state="normal")
             self.log_textbox.insert("end", message + "\n")
